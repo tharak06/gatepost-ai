@@ -1,0 +1,16 @@
+[
+  {
+    "_id": "user_1788374803431",
+    "username": "Tharaak",
+    "email": "tharaak@gatepost.ai",
+    "password_hash": "$2a$10$NADItVn1bKgAXXKog94ja.X0u8A8u/vjuyrCHirgtRBl/mB9dGp4W",
+    "createdAt": "2026-09-02T18:46:43.431Z"
+  },
+  {
+    "_id": "user_g_1788374897973",
+    "username": "Tharaak",
+    "email": "tharaak.gatepost@gmail.com",
+    "password_hash": "GOOGLE_AUTH_goog_tharaak_101",
+    "createdAt": "2026-09-02T18:48:17.973Z"
+  }
+]

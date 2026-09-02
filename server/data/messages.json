@@ -1,0 +1,18 @@
+[
+  {
+    "_id": "msg_u_1788374904914",
+    "chat_id": "chat_1788374898035",
+    "role": "user",
+    "content_text": "hi",
+    "message_type": "text",
+    "createdAt": "2026-09-02T18:48:24.914Z"
+  },
+  {
+    "_id": "msg_a_1788374904915",
+    "chat_id": "chat_1788374898035",
+    "role": "assistant",
+    "content_text": "Hello! I'm GatePost, your friendly and intelligent AI assistant. How can I help you today?",
+    "message_type": "text",
+    "createdAt": "2026-09-02T18:48:24.914Z"
+  }
+]
