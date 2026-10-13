@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
+import { Sparkles, Activity } from 'lucide-react';
 
-export default function OrbStage({ isSpeaking = false, isListening = false, size = 380, onClick }) {
+export default function OrbStage({ isSpeaking = false, isListening = false, size = 380, onClick, userStats }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -9,7 +10,8 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
     const ctx = canvas.getContext('2d');
     let animationFrameId;
 
-    const dpr = window.devicePixelRatio || 1;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const dpr = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
     canvas.width = size * dpr;
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
@@ -21,6 +23,7 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
     let time = 0;
     let mouseX = centerX;
     let mouseY = centerY;
+    let lastRenderTime = 0;
 
     const handleMouseMove = (e) => {
       const rect = canvas.getBoundingClientRect();
@@ -28,10 +31,12 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
       mouseY = e.clientY - rect.top;
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+      window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    }
 
-    // Particle field
-    const particleCount = 45;
+    // Particle field (streamlined on mobile for zero lag)
+    const particleCount = isMobile ? 15 : 35;
     const particles = Array.from({ length: particleCount }, () => ({
       angle: Math.random() * Math.PI * 2,
       dist: baseRadius * (0.8 + Math.random() * 0.5),
@@ -41,7 +46,13 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
       color: Math.random() > 0.4 ? '#00f0ff' : '#60a5fa'
     }));
 
-    const render = () => {
+    const render = (currentTime) => {
+      // Throttle to 30fps on mobile to save GPU battery & completely eliminate lag
+      if (isMobile && currentTime - lastRenderTime < 33) {
+        animationFrameId = requestAnimationFrame(render);
+        return;
+      }
+      lastRenderTime = currentTime;
       time += 0.02;
       ctx.clearRect(0, 0, size, size);
 
@@ -67,23 +78,23 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
         targetX, targetY, 10,
         targetX, targetY, baseRadius * 1.8 * pulseMod
       );
-      ambientGlow.addColorStop(0, 'rgba(0, 240, 255, 0.45)');
-      ambientGlow.addColorStop(0.3, 'rgba(37, 99, 235, 0.35)');
-      ambientGlow.addColorStop(0.7, 'rgba(29, 43, 86, 0.15)');
-      ambientGlow.addColorStop(1, 'rgba(3, 7, 18, 0)');
+      ambientGlow.addColorStop(0, 'rgba(139, 92, 246, 0.42)');
+      ambientGlow.addColorStop(0.3, 'rgba(99, 102, 241, 0.3)');
+      ambientGlow.addColorStop(0.7, 'rgba(168, 85, 247, 0.12)');
+      ambientGlow.addColorStop(1, 'rgba(11, 15, 25, 0)');
 
       ctx.fillStyle = ambientGlow;
       ctx.beginPath();
       ctx.arc(targetX, targetY, baseRadius * 1.8 * pulseMod, 0, Math.PI * 2);
       ctx.fill();
 
-      // 2. Swirling Multidimensional Plasma Ribbons
+      // 2. Swirling Multidimensional Plasma Ribbons (Luxury Violet & Sapphire)
       const rings = [
-        { tilt: 0.45, speed: 0.9, color1: '#00f0ff', color2: '#1d4ed8', width: 4 },
-        { tilt: -0.55, speed: -0.7, color1: '#38bdf8', color2: '#2563eb', width: 5 },
-        { tilt: 1.15, speed: 1.2, color1: '#ffffff', color2: '#00f0ff', width: 2.5 },
-        { tilt: -1.35, speed: -1.1, color1: '#60a5fa', color2: '#3b82f6', width: 3.5 },
-        { tilt: 0.15, speed: 0.5, color1: '#00f0ff', color2: '#1e3a8a', width: 4.5 }
+        { tilt: 0.45, speed: 0.9, color1: '#a855f7', color2: '#6366f1', width: 4 },
+        { tilt: -0.55, speed: -0.7, color1: '#c084fc', color2: '#3b82f6', width: 5 },
+        { tilt: 1.15, speed: 1.2, color1: '#ffffff', color2: '#8b5cf6', width: 2.5 },
+        { tilt: -1.35, speed: -1.1, color1: '#818cf8', color2: '#4f46e5', width: 3.5 },
+        { tilt: 0.15, speed: 0.5, color1: '#a855f7', color2: '#38bdf8', width: 4.5 }
       ];
 
       rings.forEach((ring, index) => {
@@ -102,7 +113,7 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
 
         ctx.strokeStyle = grad;
         ctx.lineWidth = ring.width;
-        ctx.shadowColor = '#00f0ff';
+        ctx.shadowColor = '#8b5cf6';
         ctx.shadowBlur = 15;
 
         ctx.beginPath();
@@ -117,12 +128,12 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
         targetX, targetY, baseRadius * 0.75 * pulseMod
       );
       innerCore.addColorStop(0, '#ffffff');
-      innerCore.addColorStop(0.2, '#00f0ff');
-      innerCore.addColorStop(0.6, '#1d4ed8');
-      innerCore.addColorStop(1, '#050b18');
+      innerCore.addColorStop(0.2, '#a855f7');
+      innerCore.addColorStop(0.6, '#6366f1');
+      innerCore.addColorStop(1, '#1e1b4b');
 
       ctx.fillStyle = innerCore;
-      ctx.shadowColor = '#00f0ff';
+      ctx.shadowColor = '#8b5cf6';
       ctx.shadowBlur = 30;
       ctx.beginPath();
       ctx.arc(targetX, targetY, baseRadius * 0.72 * pulseMod, 0, Math.PI * 2);
@@ -157,15 +168,37 @@ export default function OrbStage({ isSpeaking = false, isListening = false, size
   }, [size, isSpeaking, isListening]);
 
   return (
-    <div className="orb-stage-wrapper" onClick={onClick}>
+    <div className="orb-stage-wrapper" onClick={onClick} title="Click to launch GaTePoSt AI Chat">
       <div className="orb-ambient-aura" />
       <div className="orb-outer-ring" />
+      <div className="orb-pulse-ring-1" />
+      <div className="orb-pulse-ring-2" />
       <canvas
         ref={canvasRef}
         id="orb-canvas"
         style={{ width: `${size}px`, height: `${size}px` }}
-        title="Gatepost AI Neural Core"
+        title="GaTePoSt AI Neural Core"
       />
+
+      {/* Cybernetic Command Pedestal */}
+      <div className="orb-core-pedestal">
+        <div className="pedestal-status-capsule">
+          <span className="pedestal-dot-pulse" />
+          <span>
+            {userStats?.isLoggedIn
+              ? `USER: ${userStats.username.toUpperCase()} • ACTIVE`
+              : 'GUEST SESSION • READY'}
+          </span>
+        </div>
+        <button className="pedestal-engage-btn">
+          <Sparkles size={14} className="sparkle-spin" />
+          <span>
+            {userStats?.isLoggedIn
+              ? `Resume Chat as ${userStats.username}`
+              : 'Sign In & Start Chat'}
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

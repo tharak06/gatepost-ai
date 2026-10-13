@@ -1,18 +1,14 @@
 import React from 'react';
-import { Zap, Heart, Shield, Lock, ExternalLink } from 'lucide-react';
+import { Heart, Shield, Lock, ExternalLink } from 'lucide-react';
+import BrandLogo from '../BrandLogo';
 
 export default function AboutFooterSection() {
   return (
     <footer className="site-footer" id="about">
       <div className="footer-top-grid">
         <div className="footer-brand-col">
-          <div className="brand" style={{ marginBottom: '1rem' }}>
-            <div className="brand-icon-wrapper">
-              <Zap className="brand-icon" fill="#ffffff" />
-            </div>
-            <div className="brand-name">
-              GaTePoSt <span className="brand-tag">AI</span>
-            </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <BrandLogo size={32} />
           </div>
           <p className="footer-tagline">
             The privacy-first conversational AI and autonomous operations platform. Built on the core principle that uploaded media should never touch physical disk or database storage.

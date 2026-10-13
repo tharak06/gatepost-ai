@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
-    "start": "node server/index.js",
-    "dev:client": "npm --prefix client run dev",
-    "dev:server": "npm --prefix server run dev"
+    "build": "npm --prefix client install && npm --prefix client run build && node -e \"import('fs').then(fs => fs.cpSync('client/dist', 'public', {recursive: true}))\" && npm --prefix server install",
+    "start": "node server/index.js"
   }
 }

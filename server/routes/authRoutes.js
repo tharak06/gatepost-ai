@@ -14,13 +14,14 @@ const JWT_SECRET = process.env.JWT_SECRET_KEY || 'gatepost-ultra-secure-jwt-secr
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '../data');
+const DATA_DIR = process.env.LOCAL_STORAGE_DIR || path.join(__dirname, '../data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+console.log(`[GatePost Auth] Local user storage active at: ${DATA_DIR}`);
 
 // Helper: Load persistent local user credentials
 function loadUsers() {

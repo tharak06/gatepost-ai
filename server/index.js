@@ -48,7 +48,10 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`[GatePost AI] MERN Server running on port http://localhost:${PORT}`);
+    console.log(`[GatePost AI] 💾 Persistent local storage directory: ${process.env.LOCAL_STORAGE_DIR || path.join(__dirname, 'data')}`);
   });
 };
 
 startServer();
+
+export default app;

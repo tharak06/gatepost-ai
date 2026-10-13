@@ -1,23 +1,14 @@
 import React from 'react';
-import { Zap, Sparkles, Mic, LayoutDashboard } from 'lucide-react';
+import { Sparkles, Mic, LayoutDashboard } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 
 export default function Navbar({ activeMode, setActiveMode, onOpenAssistant }) {
   return (
     <header className="navbar">
-      <div className="brand" onClick={() => setActiveMode('dashboard')}>
-        <div className="brand-icon-wrapper">
-          <Zap className="brand-icon" fill="#ffffff" />
-        </div>
-        <div className="brand-name">
-          GaTePoSt <span className="brand-tag">AI</span>
-        </div>
-      </div>
+      <BrandLogo size={32} onClick={() => setActiveMode('dashboard')} />
 
       <ul className="nav-links">
-        <li><a className="nav-link active" href="#overview">Features</a></li>
-        <li><a className="nav-link" href="#solutions">Solutions</a></li>
-        <li><a className="nav-link" href="#analytics">Analytics</a></li>
-        <li><a className="nav-link" href="#resources">Resources</a></li>
+        <li><a className="nav-link active" href="#overview">Workspace</a></li>
         <li><a className="nav-link" href="#about">About</a></li>
       </ul>
 

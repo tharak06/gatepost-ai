@@ -5,9 +5,9 @@ export default function CircuitSvg() {
     <svg className="connector-canvas-svg" viewBox="0 0 1300 600" preserveAspectRatio="none">
       <defs>
         <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.8" />
-          <stop offset="50%" stopColor="#38bdf8" stopOpacity="1" />
-          <stop offset="100%" stopColor="#2563eb" stopOpacity="0.8" />
+          <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.8" />
+          <stop offset="50%" stopColor="#a855f7" stopOpacity="1" />
+          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.8" />
         </linearGradient>
         <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="3" result="blur" />
@@ -25,7 +25,7 @@ export default function CircuitSvg() {
         d="M 350 160 C 440 160, 480 250, 560 270"
       />
       <circle className="connector-node-dot" cx="350" cy="160" r="4.5" />
-      <circle r="3.5" fill="#ffffff" filter="url(#glow)">
+      <circle r="3.5" fill="#a855f7" filter="url(#glow)">
         <animateMotion dur="3s" repeatCount="indefinite" path="M 350 160 C 440 160, 480 250, 560 270" />
       </circle>
 
@@ -36,7 +36,7 @@ export default function CircuitSvg() {
         d="M 350 440 C 440 440, 480 350, 560 330"
       />
       <circle className="connector-node-dot" cx="350" cy="440" r="4.5" />
-      <circle r="3.5" fill="#00f0ff" filter="url(#glow)">
+      <circle r="3.5" fill="#7c3aed" filter="url(#glow)">
         <animateMotion dur="3.5s" repeatCount="indefinite" path="M 350 440 C 440 440, 480 350, 560 330" />
       </circle>
 
@@ -47,7 +47,7 @@ export default function CircuitSvg() {
         d="M 950 160 C 860 160, 820 250, 740 270"
       />
       <circle className="connector-node-dot" cx="950" cy="160" r="4.5" />
-      <circle r="3.5" fill="#ffffff" filter="url(#glow)">
+      <circle r="3.5" fill="#10b981" filter="url(#glow)">
         <animateMotion dur="2.8s" repeatCount="indefinite" path="M 950 160 C 860 160, 820 250, 740 270" />
       </circle>
 
@@ -58,7 +58,7 @@ export default function CircuitSvg() {
         d="M 950 440 C 860 440, 820 350, 740 330"
       />
       <circle className="connector-node-dot" cx="950" cy="440" r="4.5" />
-      <circle r="3.5" fill="#00f0ff" filter="url(#glow)">
+      <circle r="3.5" fill="#38bdf8" filter="url(#glow)">
         <animateMotion dur="3.2s" repeatCount="indefinite" path="M 950 440 C 860 440, 820 350, 740 330" />
       </circle>
     </svg>

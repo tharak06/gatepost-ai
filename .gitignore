@@ -8,3 +8,5 @@ server/serviceAccountKey.json
 server/serviceAccountKey.json.json
 serviceAccountKey.json
 serviceAccountKey.json.json
+
+.vercel

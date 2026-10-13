@@ -20,10 +20,14 @@ const router = express.Router();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '../data');
+const DATA_DIR = process.env.LOCAL_STORAGE_DIR || path.join(__dirname, '../data');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const FILES_FILE = path.join(DATA_DIR, 'files.json');
+console.log(`[GatePost Chats] Local conversation storage active at: ${DATA_DIR}`);
 
 // Persistent storage helpers
 function readData(file) {
@@ -54,6 +58,194 @@ const upload = multer({
 });
 
 router.use(requireAuth);
+
+// ==================================================================
+// 0. GET /api/chats/user/analytics (Real-time per-user usage & telemetry)
+// ==================================================================
+router.get('/user/analytics', async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    const now = new Date();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    let userChats = [];
+    let userMessages = [];
+
+    // 1. Google Cloud Firestore
+    if (getFirebaseStatus()) {
+      const firestore = getFirestoreDb();
+      const [cSnap, mSnap] = await Promise.all([
+        firestore.collection('chats').where('user_id', '==', userId).get(),
+        firestore.collection('messages').where('user_id', '==', userId).get()
+      ]);
+
+      cSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.expiresAt || new Date(d.expiresAt) > now) {
+          userChats.push({ _id: doc.id, ...d });
+        }
+      });
+
+      mSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.expiresAt || new Date(d.expiresAt) > now) {
+          userMessages.push({ _id: doc.id, ...d });
+        }
+      });
+    } else if (getDbStatus()) {
+      // 2. MongoDB
+      userChats = await Chat.find({
+        user_id: userId,
+        createdAt: { $gte: thirtyDaysAgo }
+      });
+      userMessages = await Message.find({
+        user_id: userId,
+        createdAt: { $gte: thirtyDaysAgo }
+      });
+    } else {
+      // 3. Persistent Local Storage
+      persistentChats = readData(CHATS_FILE);
+      persistentMessages = readData(MESSAGES_FILE);
+      userChats = persistentChats.filter(c => c.user_id === userId && new Date(c.createdAt) >= thirtyDaysAgo);
+      userMessages = persistentMessages.filter(m => m.user_id === userId && new Date(m.createdAt) >= thirtyDaysAgo);
+    }
+
+    // Sort chats newest first
+    userChats.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Calculate real user usage metrics
+    const chatsCount = userChats.length;
+    let promptsSent = 0;
+    let aiCreations = 0;
+    let docsAnalyzed = 0;
+
+    // Calculate real activity for the last 6 days + Today
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const chartDays = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const dayName = i === 0 ? 'Today' : dayLabels[d.getDay()];
+      const dateKey = d.toISOString().slice(0, 10);
+      chartDays.push({ day: dayName, dateKey, count: 0 });
+    }
+
+    userMessages.forEach(msg => {
+      if (msg.role === 'user') {
+        promptsSent++;
+      }
+      if (msg.message_type === 'image_generated') {
+        aiCreations++;
+      }
+      if (msg.message_type === 'pdf_upload' || msg.message_type === 'file_upload') {
+        docsAnalyzed++;
+      }
+
+      if (msg.createdAt) {
+        const msgDateKey = new Date(msg.createdAt).toISOString().slice(0, 10);
+        const match = chartDays.find(cd => cd.dateKey === msgDateKey);
+        if (match) {
+          match.count++;
+        }
+      }
+    });
+
+    const maxDayCount = Math.max(...chartDays.map(cd => cd.count), 1);
+    const activityChart = chartDays.map(cd => {
+      const pct = cd.count === 0 ? 12 : Math.min(100, Math.round(20 + (cd.count / maxDayCount) * 80));
+      return {
+        day: cd.day,
+        value: pct,
+        count: cd.count,
+        tooltip: `${cd.day}: ${cd.count} ${cd.count === 1 ? 'prompt' : 'prompts'}`
+      };
+    });
+
+    // Dynamic user checklist
+    const tasks = [
+      {
+        id: '1',
+        title: 'Authenticate personal cloud credentials',
+        completed: true,
+        badge: 'Done'
+      },
+      {
+        id: '2',
+        title: userChats[0]?.title ? `Resume chat: "${userChats[0].title}"` : 'Start your first chat session',
+        completed: chatsCount > 0,
+        badge: chatsCount > 0 ? 'Saved' : 'Pending'
+      },
+      {
+        id: '3',
+        title: 'Generate high-res AI image via Flux.1',
+        completed: aiCreations > 0,
+        badge: aiCreations > 0 ? `${aiCreations} Done` : 'Try'
+      },
+      {
+        id: '4',
+        title: docsAnalyzed > 0 ? 'In-Memory PDF analysis verified' : 'Upload document for RAM analysis',
+        completed: docsAnalyzed > 0,
+        badge: docsAnalyzed > 0 ? 'Done' : 'Try'
+      }
+    ];
+
+    // Real-time user feed
+    const insights = [
+      {
+        id: 1,
+        text: `Account Synced: ${req.user.name || req.user.username || 'User'} (${req.user.email || 'Cloud'})`,
+        time: 'Active',
+        icon: 'UserCheck',
+        level: 'optimal'
+      },
+      {
+        id: 2,
+        text: userChats[0]
+          ? `Recent Chat: "${userChats[0].title}" is saved & ready to resume`
+          : 'Start your first conversation with GaTePoSt',
+        time: chatsCount > 0 ? `${chatsCount} Chats` : 'Cloud',
+        icon: 'MessageSquare',
+        level: 'boost'
+      },
+      {
+        id: 3,
+        text: '30-Day Chat Retention: All your messages are retained for 30 days',
+        time: '30 Days',
+        icon: 'History',
+        level: 'optimal'
+      },
+      {
+        id: 4,
+        text: aiCreations > 0
+          ? `AI Vision Synthesis: ${aiCreations} artwork creations generated`
+          : 'AI Vision Synthesis: Type "Generate an image of..." to create artwork',
+        time: aiCreations > 0 ? `${aiCreations} Arts` : 'Ready',
+        icon: 'Sparkles',
+        level: 'ready'
+      }
+    ];
+
+    return res.json({
+      success: true,
+      data: {
+        userId,
+        username: req.user.name || req.user.username || 'User',
+        email: req.user.email || 'Cloud Account',
+        chatsCount,
+        promptsSent,
+        aiCreations,
+        docsAnalyzed,
+        lastChatTitle: userChats[0]?.title || 'New Session',
+        lastChatId: userChats[0]?._id || null,
+        activityChart,
+        tasks,
+        insights
+      }
+    });
+  } catch (err) {
+    console.error('[User Analytics Error]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // ==================================================================
 // 1. GET /api/chats (Restores all chats from Cloud, 30-Day Retention)
@@ -201,12 +393,211 @@ router.get('/:chat_id/messages', async (req, res) => {
 });
 
 // ==================================================================
+// DELETE /api/chats/:id (Deletes a chat conversation & messages)
+// ==================================================================
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (getFirebaseStatus()) {
+      const firestore = getFirestoreDb();
+      await firestore.collection('chats').doc(id).delete();
+      const mSnap = await firestore.collection('messages').where('chat_id', '==', id).get();
+      const batch = firestore.batch();
+      mSnap.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+    } else if (getDbStatus()) {
+      await Chat.findByIdAndDelete(id);
+      await Message.deleteMany({ chat_id: id });
+    }
+
+    persistentChats = readData(CHATS_FILE);
+    persistentChats = persistentChats.filter(c => (c._id !== id && c.id !== id));
+    writeData(CHATS_FILE, persistentChats);
+
+    persistentMessages = readData(MESSAGES_FILE);
+    persistentMessages = persistentMessages.filter(m => m.chat_id !== id);
+    writeData(MESSAGES_FILE, persistentMessages);
+
+    return res.json({ success: true, message: 'Chat deleted', id });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================================================================
+// PATCH /api/chats/:id/pin (Toggles pin status for a chat)
+// ==================================================================
+router.patch('/:id/pin', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let isPinned = false;
+
+    if (getFirebaseStatus()) {
+      const firestore = getFirestoreDb();
+      const chatDoc = await firestore.collection('chats').doc(id).get();
+      if (chatDoc.exists) {
+        isPinned = !chatDoc.data().pinned;
+        await firestore.collection('chats').doc(id).update({ pinned: isPinned });
+      }
+    } else if (getDbStatus()) {
+      const chat = await Chat.findById(id);
+      if (chat) {
+        chat.pinned = !chat.pinned;
+        await chat.save();
+        isPinned = chat.pinned;
+      }
+    }
+
+    persistentChats = readData(CHATS_FILE);
+    const target = persistentChats.find(c => c._id === id || c.id === id);
+    if (target) {
+      target.pinned = !target.pinned;
+      isPinned = target.pinned;
+      writeData(CHATS_FILE, persistentChats);
+    }
+
+    return res.json({ success: true, pinned: isPinned, id });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================================================================
+// PATCH /api/chats/:id/rename (Rename chat conversation title)
+// ==================================================================
+router.patch('/:id/rename', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'Valid title is required.' });
+    }
+    const cleanTitle = title.trim().slice(0, 80);
+
+    // 1. Google Cloud Firestore
+    try {
+      if (getFirebaseStatus()) {
+        const firestore = getFirestoreDb();
+        await firestore.collection('chats').doc(id).set({
+          title: cleanTitle,
+          customTitle: true,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } else if (getDbStatus()) {
+        // 2. MongoDB
+        await Chat.findByIdAndUpdate(id, { title: cleanTitle, customTitle: true });
+      }
+    } catch (dbErr) {
+      console.warn('[GaTePoSt] Cloud DB rename sync note:', dbErr.message);
+    }
+
+    // 3. Fallback Local Storage
+    persistentChats = readData(CHATS_FILE);
+    const target = persistentChats.find(c => c._id === id || c.id === id);
+    if (target) {
+      target.title = cleanTitle;
+      target.customTitle = true;
+      writeData(CHATS_FILE, persistentChats);
+    }
+
+    return res.json({ success: true, id, title: cleanTitle });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================================================================
+// POST /api/chats/:id/summarize (Regenerate chat title from messages summary)
+// ==================================================================
+router.post('/:id/summarize', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let messages = [];
+
+    try {
+      if (getFirebaseStatus()) {
+        const snap = await getFirestoreDb().collection('messages').where('chat_id', '==', id).get();
+        snap.forEach(d => messages.push(d.data()));
+        messages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      } else if (getDbStatus()) {
+        messages = await Message.find({ chat_id: id }).sort({ createdAt: 1 });
+      }
+    } catch (fetchErr) {
+      console.warn('[GaTePoSt] Fetch messages for summarize note:', fetchErr.message);
+    }
+
+    if (messages.length === 0) {
+      persistentMessages = readData(MESSAGES_FILE);
+      messages = persistentMessages.filter(m => m.chat_id === id);
+    }
+
+    const userMsg = messages.find(m => m.role === 'user' && m.content_text && !/^(hi|hello|hey)$/i.test(m.content_text.trim())) || messages.find(m => m.role === 'user');
+    const newTitle = userMsg ? summarizeChatTitle(userMsg.content_text) : 'Conversation';
+
+    try {
+      if (getFirebaseStatus()) {
+        await getFirestoreDb().collection('chats').doc(id).set({
+          title: newTitle,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } else if (getDbStatus()) {
+        await Chat.findByIdAndUpdate(id, { title: newTitle });
+      }
+    } catch (saveErr) {
+      console.warn('[GaTePoSt] Save summarized title note:', saveErr.message);
+    }
+
+    persistentChats = readData(CHATS_FILE);
+    const target = persistentChats.find(c => c._id === id || c.id === id);
+    if (target) {
+      target.title = newTitle;
+      writeData(CHATS_FILE, persistentChats);
+    }
+
+    return res.json({ success: true, id, title: newTitle });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Smart Chat Title Summarizer: Extracts concise, clean 3-5 word topic title
+function summarizeChatTitle(prompt, replyText = '') {
+  if (!prompt || typeof prompt !== 'string') return 'New Conversation';
+  let clean = prompt
+    .replace(/^(generate an image of|generate image of|create an image of|create image of|draw a|draw an|draw|paint a|paint|what is|what are|how to|tell me about|explain|who is|can you please|can you|could you|please help me with|please|help me with|write a code for|write code for|write a|i want to know about|i want to know)\s+/i, '')
+    .trim();
+  clean = clean.replace(/[?.,!#*`~^]+$/, '').trim();
+
+  // If prompt was just a greeting like "hi", return general inquiry or greeting
+  if (/^(hi|hello|hey|greetings|good morning|good evening)$/i.test(clean)) {
+    return 'General Chat';
+  }
+
+  // Capitalize and format nicely (max ~38 chars)
+  if (clean.length > 38) {
+    clean = clean.slice(0, 38).trim();
+    const lastSpace = clean.lastIndexOf(' ');
+    if (lastSpace > 14) clean = clean.slice(0, lastSpace);
+  }
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 0) {
+    clean = words
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  return clean || 'Conversation';
+}
+
+// ==================================================================
 // 4. POST /api/chats/:chat_id/messages (Sends text turn, saved in Cloud)
 // ==================================================================
 router.post('/:chat_id/messages', async (req, res) => {
   try {
     const { chat_id } = req.params;
-    const { content_text } = req.body;
+    const { content_text, model, provider } = req.body;
     if (!content_text) {
       return res.status(400).json({ error: 'content_text is required.' });
     }
@@ -214,24 +605,60 @@ router.post('/:chat_id/messages', async (req, res) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+    // Auto-summarize chat title if currently default or uncustomized
+    let updatedChatTitle = null;
+    const smartTitle = summarizeChatTitle(content_text);
+
+    try {
+      if (getFirebaseStatus()) {
+        const firestore = getFirestoreDb();
+        const chatDoc = await firestore.collection('chats').doc(chat_id).get();
+        if (chatDoc.exists) {
+          const cData = chatDoc.data();
+          const curTitle = cData.title || '';
+          if (!cData.customTitle && (curTitle.startsWith('Session #') || curTitle === 'New Conversation' || curTitle === 'Conversation' || curTitle === 'General Chat' || /^(hi|hello|hey)\b/i.test(curTitle))) {
+            await firestore.collection('chats').doc(chat_id).update({ title: smartTitle });
+            updatedChatTitle = smartTitle;
+          }
+        }
+      } else if (getDbStatus()) {
+        const chat = await Chat.findById(chat_id);
+        if (chat && !chat.customTitle && (chat.title.startsWith('Session #') || chat.title === 'New Conversation' || chat.title === 'Conversation' || chat.title === 'General Chat' || /^(hi|hello|hey)\b/i.test(chat.title))) {
+          chat.title = smartTitle;
+          await chat.save();
+          updatedChatTitle = smartTitle;
+        }
+      } else {
+        persistentChats = readData(CHATS_FILE);
+        const c = persistentChats.find(x => x._id === chat_id || x.id === chat_id);
+        if (c && !c.customTitle && (c.title.startsWith('Session #') || c.title === 'New Conversation' || c.title === 'Conversation' || c.title === 'General Chat' || /^(hi|hello|hey)\b/i.test(c.title))) {
+          c.title = smartTitle;
+          writeData(CHATS_FILE, persistentChats);
+          updatedChatTitle = smartTitle;
+        }
+      }
+    } catch (titleErr) {
+      console.warn('[GaTePoSt] Title summarization notice:', titleErr.message);
+    }
+
     // 0. Detect natural language image generation intent (like Gemini / ChatGPT Plus)
     const lower = content_text.toLowerCase().trim();
     const isImageRequest =
-      lower.startsWith('generate an image') ||
-      lower.startsWith('generate image') ||
-      lower.startsWith('create an image') ||
-      lower.startsWith('create image') ||
-      lower.startsWith('draw a ') ||
-      lower.startsWith('draw an ') ||
-      lower.startsWith('draw ') ||
-      lower.startsWith('paint ') ||
-      lower.startsWith('make an image of') ||
-      lower.includes('generate an image of') ||
-      lower.includes('generate a photo of');
+      /\b(generate|create|draw|paint|render|make)\s+(me\s+)?(an?\s+)?(image|photo|picture|illustration|painting|visual|graphic|artwork)\b/i.test(lower) ||
+      /^draw\s+/i.test(lower) ||
+      /^paint\s+/i.test(lower) ||
+      /^image of\s+/i.test(lower) ||
+      /^picture of\s+/i.test(lower) ||
+      /^photo of\s+/i.test(lower);
 
-    if (isImageRequest) {
+    // If query is just asking about capability rather than requesting an image
+    const isCapabilityQuestion =
+      /^(can you|do you|are you able to|can you do)\s+(generate|create|draw|paint|make)\s+(images?|pictures?|photos?)/i.test(lower) ||
+      /^(image generation|can you do image generation|image generation can you do)\??$/i.test(lower);
+
+    if (isImageRequest && !isCapabilityQuestion) {
       const cleanPrompt = content_text
-        .replace(/^(generate an image of|generate image of|create an image of|create image of|generate image|create image|draw a|draw an|draw|make an image of|paint a|paint an|paint)\s*/i, '')
+        .replace(/^(can you\s+)?(please\s+)?(generate|create|draw|paint|render|make)\s+(me\s+)?(an?\s+)?(image|photo|picture|illustration|painting|visual|graphic|artwork)?(\s+of)?\s*/i, '')
         .trim() || content_text;
 
       const imageDataUrl = await generateImageBase64(cleanPrompt);
@@ -272,11 +699,40 @@ router.post('/:chat_id/messages', async (req, res) => {
         writeData(MESSAGES_FILE, persistentMessages);
       }
 
-      return res.status(201).json({ success: true, data: [uMsg, aMsg] });
+      return res.status(201).json({
+        success: true,
+        data: [uMsg, aMsg],
+        updated_chat_title: updatedChatTitle,
+        chat_id
+      });
+    }
+
+    // Fetch previous conversation turns for context
+    let history = [];
+    try {
+      if (getFirebaseStatus()) {
+        const firestore = getFirestoreDb();
+        const snap = await firestore.collection('messages')
+          .where('chat_id', '==', chat_id)
+          .limit(8)
+          .get();
+        snap.forEach(doc => history.push(doc.data()));
+        history.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      } else if (getDbStatus()) {
+        history = await Message.find({ chat_id }).sort({ createdAt: -1 }).limit(8);
+        history.reverse();
+      } else {
+        persistentMessages = readData(MESSAGES_FILE);
+        history = persistentMessages
+          .filter(m => m.chat_id === chat_id)
+          .slice(-8);
+      }
+    } catch (histErr) {
+      history = [];
     }
 
     // Ask AI engine with creator persona (Tharak and Gowtham)
-    const aiReply = await generateTextChat(content_text, history);
+    const aiReply = await generateTextChat(content_text, history, { model, provider });
 
     // 1. Google Cloud Firestore
     if (getFirebaseStatus()) {
@@ -300,6 +756,7 @@ router.post('/:chat_id/messages', async (req, res) => {
         user_id: req.user.sub,
         role: 'assistant',
         content_text: aiReply,
+        model: model || 'llama3.2',
         message_type: 'text',
         createdAt: new Date(now.getTime() + 50).toISOString(),
         expiresAt
@@ -307,7 +764,12 @@ router.post('/:chat_id/messages', async (req, res) => {
 
       await Promise.all([uRef.set(uMsg), aRef.set(aMsg)]);
       console.log(`[GatePost Firebase] Chat turn saved to Cloud Firestore for 30 days!`);
-      return res.status(201).json({ success: true, data: [uMsg, aMsg] });
+      return res.status(201).json({
+        success: true,
+        data: [uMsg, aMsg],
+        updated_chat_title: updatedChatTitle,
+        chat_id
+      });
     }
 
     // 2. MongoDB
@@ -324,7 +786,12 @@ router.post('/:chat_id/messages', async (req, res) => {
         content_text: aiReply,
         message_type: 'text'
       });
-      return res.status(201).json({ success: true, data: [userMsg, assistantMsg] });
+      return res.status(201).json({
+        success: true,
+        data: [userMsg, assistantMsg],
+        updated_chat_title: updatedChatTitle,
+        chat_id
+      });
     }
 
     // 3. Fallback Local Storage
@@ -350,7 +817,12 @@ router.post('/:chat_id/messages', async (req, res) => {
     persistentMessages.push(uMsg, aMsg);
     writeData(MESSAGES_FILE, persistentMessages);
 
-    return res.status(201).json({ success: true, data: [uMsg, aMsg] });
+    return res.status(201).json({
+      success: true,
+      data: [uMsg, aMsg],
+      updated_chat_title: updatedChatTitle,
+      chat_id
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

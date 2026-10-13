@@ -1,17 +1,17 @@
 import React from 'react';
-import { Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ShieldCheck } from 'lucide-react';
 
 export default function Hero({ onGetStarted, onSeeInAction }) {
   return (
     <section className="hero-section">
       <div className="hero-badge">
-        <ShieldCheck size={14} color="#00f0ff" />
+        <ShieldCheck size={14} className="hero-badge-icon" />
         <span>Architected by Tharak & Gowtham • In-Memory Intelligence</span>
       </div>
 
       <h1 className="hero-title">
         The Intelligent Perimeter for<br />
-        <span className="text-gradient-cyan">Mission-Critical Operations.</span>
+        <span className="text-gradient-luxury">Mission-Critical Operations.</span>
       </h1>
 
       <p className="hero-subtitle">
@@ -21,7 +21,8 @@ export default function Hero({ onGetStarted, onSeeInAction }) {
 
       <div className="hero-cta-group">
         <button className="btn-primary" onClick={onGetStarted}>
-          Start Chat <ArrowRight size={16} />
+          <span>Start Chat</span>
+          <ArrowRight size={16} />
         </button>
         <button className="btn-secondary" onClick={onSeeInAction}>
           Explore Network System

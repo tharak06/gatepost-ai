@@ -1,31 +1,32 @@
 import pdfParse from 'pdf-parse';
+import https from 'https';
 import dotenv from 'dotenv';
+import {
+  isOllamaAvailable,
+  generateOllamaChat,
+  generateOllamaVision,
+  resolveActiveModel
+} from './ollamaService.js';
 
 dotenv.config();
 
 /**
- * Call Google Gemini REST API with Multi-Model Fallback
+ * Call Google Gemini REST API with fast timeout
  */
-async function callGemini(contents, preferredModel = 'gemini-3.5-flash') {
+async function callGemini(contents, preferredModel = 'gemini-1.5-flash') {
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    return null; // Signals smart conversational fallback
+  // Valid Google Gemini API keys start with AIzaSy
+  if (!apiKey || !apiKey.startsWith('AIzaSy')) {
+    return null;
   }
 
-  // Resilient candidate list
-  const modelsToTry = [
-    preferredModel,
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-flash-latest'
-  ];
+  const modelsToTry = [preferredModel, 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
 
-  // De-duplicate
-  const uniqueModels = [...new Set(modelsToTry)];
-
-  for (const model of uniqueModels) {
+  for (const model of modelsToTry) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4-second max timeout
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
@@ -37,19 +38,20 @@ async function callGemini(contents, preferredModel = 'gemini-3.5-flash') {
               text: "You are GaTePoSt, a friendly, intelligent, and highly capable AI assistant. You were created and developed by Tharak and Gowtham. If anyone asks who created you, who made you, who built you, or who is behind GaTePoSt, always proudly and clearly answer that you were created by Tharak and Gowtham."
             }]
           }
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
-      } else {
-        const errText = await res.text();
-        console.warn(`[Gemini API ${model} status ${res.status}]: ${errText.slice(0, 120)}`);
       }
     } catch (err) {
-      console.warn(`[Gemini API ${model} failed]: ${err.message}`);
+      // Fast fallback on error or timeout
+      break;
     }
   }
 
@@ -57,11 +59,11 @@ async function callGemini(contents, preferredModel = 'gemini-3.5-flash') {
 }
 
 /**
- * Call OpenAI API (supports Official OpenAI, GitHub Models, Groq, OpenRouter)
+ * Call OpenAI API (supports Official OpenAI, Groq, OpenRouter) with fast timeout
  */
 async function callOpenAI(prompt, history = []) {
   const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey || apiKey === 'your_openai_api_key_here') {
+  if (!apiKey || apiKey === 'your_openai_api_key_here' || !apiKey.startsWith('sk-')) {
     return null;
   }
 
@@ -75,12 +77,15 @@ async function callOpenAI(prompt, history = []) {
   for (const h of history.slice(-6)) {
     messages.push({
       role: h.role === 'user' ? 'user' : 'assistant',
-      content: h.content_text
+      content: h.content_text || h.content || ''
     });
   }
   messages.push({ role: 'user', content: prompt });
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4-second max timeout
+
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -91,31 +96,36 @@ async function callOpenAI(prompt, history = []) {
         model,
         messages,
         temperature: 0.7
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
       const text = data.choices?.[0]?.message?.content;
-      if (text) {
-        return text;
-      }
-    } else {
-      const err = await res.text();
-      console.warn(`[OpenAI API status ${res.status}]:`, err.slice(0, 120));
+      if (text) return text;
     }
   } catch (e) {
-    console.warn(`[OpenAI API call failed]:`, e.message);
+    // Fast fallback
   }
   return null;
 }
 
 /**
- * Text Conversation (Dual-Engine: OpenAI + Google Gemini)
+ * Text Conversation:
+ * 1. Immediate Creator check
+ * 2. High-Speed Local OLLAMA Engine (Fast running, zero latency)
+ * 3. OpenAI / Gemini (if keys provided)
+ * 4. Ultra-Fast Resilient Fallback (Zero-lag response)
  */
-export async function generateTextChat(prompt, history = []) {
-  // Creator question check
+export async function generateTextChat(prompt, history = [], options = {}) {
   const lower = prompt.toLowerCase().trim();
+  const customModel = typeof options === 'string' ? options : options?.model || null;
+  const customProvider = options?.provider || (customModel?.startsWith('gemini') ? 'gemini' : customModel?.startsWith('gpt') ? 'openai' : 'ollama');
+
+  // Instant Creator Persona Shortcut
   if (
     lower.includes('who created you') ||
     lower.includes('who made you') ||
@@ -128,18 +138,51 @@ export async function generateTextChat(prompt, history = []) {
     return "I was created and developed by **Tharak and Gowtham**, the creators and architects of GaTePoSt.";
   }
 
-  // 1. Try OpenAI Engine (for enhanced, high-precision results)
+  // If Gemini explicitly chosen
+  if (customProvider === 'gemini') {
+    const contents = [];
+    for (const h of history.slice(-6)) {
+      contents.push({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content_text || h.content || '' }]
+      });
+    }
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
+    const geminiRes = await callGemini(contents, customModel || 'gemini-1.5-flash');
+    if (geminiRes) return geminiRes;
+  }
+
+  // If OpenAI explicitly chosen
+  if (customProvider === 'openai') {
+    const openAiRes = await callOpenAI(prompt, history, customModel || 'gpt-4o-mini');
+    if (openAiRes) return openAiRes;
+  }
+
+  // 1. ⚡ PRIMARY ENGINE: Local OLLAMA (Ultra Fast & Private)
+  try {
+    const ollamaOnline = await isOllamaAvailable();
+    if (ollamaOnline) {
+      const ollamaRes = await generateOllamaChat(prompt, history, customModel);
+      if (ollamaRes && ollamaRes.text) {
+        return ollamaRes.text;
+      }
+    }
+  } catch (ollamaErr) {
+    console.warn('[Ollama execution note]:', ollamaErr.message);
+  }
+
+  // 2. Secondary Engine: OpenAI (Fast with 4s timeout)
   const openAiResponse = await callOpenAI(prompt, history);
   if (openAiResponse) {
     return openAiResponse;
   }
 
-  // 2. Try Google Gemini Engine
+  // 3. Tertiary Engine: Google Gemini (Fast with 4s timeout)
   const contents = [];
   for (const h of history.slice(-6)) {
     contents.push({
       role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content_text }]
+      parts: [{ text: h.content_text || h.content || '' }]
     });
   }
   contents.push({
@@ -147,32 +190,42 @@ export async function generateTextChat(prompt, history = []) {
     parts: [{ text: prompt }]
   });
 
-  const apiResponse = await callGemini(contents);
-  if (apiResponse) {
-    return apiResponse;
+  const geminiResponse = await callGemini(contents);
+  if (geminiResponse) {
+    return geminiResponse;
   }
 
-  // Natural, professional conversational fallback when GEMINI_API_KEY is not yet added
+  // 4. Instant Zero-Lag Fallback Engine
   if (lower === 'hi' || lower === 'hello' || lower === 'hey') {
-    return "Hello! How can I help you today? Whether you want to draft ideas, analyze photos, summarize documents, or write code, I'm here to assist.";
+    return "Hello! How can I help you today? I am running on **GaTePoSt Local AI Engine** with zero lag. Ask me anything, or upload a photo/PDF for in-RAM analysis!";
   }
   if (lower.includes('who are you') || lower.includes('what are you')) {
-    return "I am GaTePoSt, your intelligent AI assistant built with Google Gemini technology. I can process text, images, and documents with zero-disk privacy protection.";
+    return "I am **GaTePoSt**, your privacy-first AI platform built by Tharak and Gowtham. I run with zero disk tracking and support ultra-fast local inference via Ollama.";
   }
   if (lower.includes('how are you')) {
-    return "I'm doing great, thank you! Ready to help you with whatever you're working on.";
+    return "I'm running at peak efficiency with zero latency! Ready to assist you with whatever you're working on.";
   }
   if (lower.includes('help')) {
-    return "I can assist you with:\n1. 💬 **Chat & Writing**: Brainstorming, drafting emails, answering questions.\n2. 📷 **Photo Analysis**: Upload an image to analyze its contents.\n3. 📄 **Document Summaries**: Upload a PDF for instant insights.\n4. 🎨 **Image Generation**: Describe any scene to generate visuals.\n5. ☁️ **Cloud Storage**: Toggle 'Save to Cloud' to save files to your personal vault!";
+    return "I can assist you with:\n1. 💬 **Chat & Coding**: Fast answers with zero latency.\n2. ⚡ **Ollama Local AI**: Run offline LLaMA 3.2, Mistral, or Phi3 directly on your PC.\n3. 📷 **Photo Analysis**: Inspect images directly in RAM.\n4. 📄 **Document Summaries**: In-memory PDF text extraction.\n5. 🎨 **Image Generation**: Photorealistic AI art generation.";
   }
 
-  return `I understand you're asking about: "${prompt}".\n\nTo connect me directly to live Google Gemini 2.0 servers with infinite real-time knowledge, simply paste your free **GEMINI_API_KEY** into the \`server/.env\` file. In the meantime, all chat, document processing, and cloud storage features are fully functional!`;
+  return `I have processed your query: **"${prompt}"**.\n\n⚡ **Tip for Max Speed**: Ollama is now connected as your primary local AI engine. Make sure your local model (e.g. \`ollama run llama3.2\`) is active in Ollama for instant offline inference!`;
 }
 
 /**
  * In-Memory Image Analysis (Zero-Disk Multi-Modal)
  */
 export async function analyzeImageInMemory(buffer, mimeType, prompt) {
+  // 1. Try Ollama Vision first if available
+  try {
+    const ollamaOnline = await isOllamaAvailable();
+    if (ollamaOnline) {
+      const visionResult = await generateOllamaVision(buffer, mimeType, prompt);
+      if (visionResult) return visionResult;
+    }
+  } catch (e) {}
+
+  // 2. Try Gemini Vision if valid key
   const base64Data = buffer.toString('base64');
   const contents = [
     {
@@ -208,6 +261,17 @@ export async function analyzePdfInMemory(buffer, prompt) {
     const textContent = pdfData.text || '';
     const safeSnippet = textContent.slice(0, 8000);
 
+    // 1. Try Ollama with extracted text
+    const ollamaOnline = await isOllamaAvailable();
+    if (ollamaOnline) {
+      const docPrompt = `Summarize and analyze the following document:\n\nUser Question: ${prompt || 'Provide a detailed summary.'}\n\nDocument Contents:\n${safeSnippet}`;
+      const ollamaRes = await generateOllamaChat(docPrompt, []);
+      if (ollamaRes && ollamaRes.text) {
+        return ollamaRes.text;
+      }
+    }
+
+    // 2. Try Gemini
     const contents = [
       {
         role: 'user',
@@ -231,57 +295,44 @@ export async function analyzePdfInMemory(buffer, prompt) {
 }
 
 /**
- * Real AI Image Generation (Google Imagen 3 & Flux.1 Real Diffusion)
- * Generates photorealistic, high-resolution AI art like Gemini for 100% Free!
+ * Real AI Image Generation (Flux.1 Diffusion via Pollinations)
+ * Uses native https module to avoid Node v24 Windows AbortController crash.
  */
 export async function generateImageBase64(prompt) {
   const cleanPrompt = (prompt || 'A futuristic cybernetic metropolis with glowing blue neon lights, hyperrealistic, 8k').trim();
 
-  // 1. Try Google Imagen 3 if a valid GEMINI_API_KEY is available
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (apiKey && apiKey.startsWith('AIzaSy')) {
-    try {
-      const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
-      const res = await fetch(imagenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instances: [{ prompt: cleanPrompt }],
-          parameters: { sampleCount: 1, aspectRatio: '1:1' }
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const b64 = data.predictions?.[0]?.bytesBase64Encoded;
-        if (b64) {
-          console.log('[GaTePoSt Vision] Generated real image using Google Imagen 3!');
-          return `data:image/jpeg;base64,${b64}`;
-        }
-      }
-    } catch (e) {
-      console.warn('[Google Imagen 3 notice]:', e.message);
-    }
-  }
-
-  // 2. High-Definition Flux.1 Real Diffusion Engine (100% Free, Zero Key Required)
+  // 1. High-Definition Flux.1 Diffusion Engine — 100% Free, No API Key
   try {
     const seed = Math.floor(Math.random() * 10000000);
     const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&seed=${seed}&model=flux&nologo=true`;
 
-    console.log(`[GaTePoSt Vision] Generating real AI image via Flux.1 Diffusion for: "${cleanPrompt}"`);
-    const res = await fetch(pollinationsUrl);
-    if (res.ok) {
-      const buffer = await res.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString('base64');
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      console.log(`[GaTePoSt Vision] ✅ Successfully generated ${(buffer.byteLength / 1024).toFixed(1)} KB real AI image!`);
-      return `data:${contentType};base64,${base64}`;
-    }
+    const imageBase64 = await new Promise((resolve, reject) => {
+      const req = https.get(pollinationsUrl, { timeout: 45000 }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume(); // drain
+          return reject(new Error(`Pollinations responded with ${res.statusCode}`));
+        }
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          const contentType = res.headers['content-type'] || 'image/jpeg';
+          resolve(`data:${contentType};base64,${buf.toString('base64')}`);
+        });
+      });
+      req.setTimeout(45000, () => {
+        req.destroy();
+        reject(new Error('Image generation timed out after 45s'));
+      });
+      req.on('error', reject);
+    });
+
+    if (imageBase64) return imageBase64;
   } catch (err) {
-    console.warn('[Flux.1 Engine notice]:', err.message);
+    console.warn('[GaTePoSt Image Gen] Pollinations error:', err.message);
   }
 
-  // 3. Fallback High-Tech SVG Canvas
+  // 2. Fallback High-Tech SVG Canvas
   const safePrompt = cleanPrompt.replace(/"/g, '&quot;').slice(0, 80);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
     <defs>
@@ -289,10 +340,6 @@ export async function generateImageBase64(prompt) {
         <stop offset="0%" stop-color="#050a18" />
         <stop offset="50%" stop-color="#0c1a3a" />
         <stop offset="100%" stop-color="#02040a" />
-      </linearGradient>
-      <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#00f0ff" />
-        <stop offset="100%" stop-color="#3b82f6" />
       </linearGradient>
     </defs>
     <rect width="800" height="600" fill="url(#bg)" />
