@@ -14,13 +14,26 @@ const JWT_SECRET = process.env.JWT_SECRET_KEY || 'gatepost-ultra-secure-jwt-secr
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = process.env.LOCAL_STORAGE_DIR || path.join(__dirname, '../data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function getSafeStorageDir() {
+  const preferred = process.env.LOCAL_STORAGE_DIR;
+  const fallback = path.join(__dirname, '../data');
+  if (preferred) {
+    try {
+      if (!fs.existsSync(preferred)) {
+        fs.mkdirSync(preferred, { recursive: true });
+      }
+      return preferred;
+    } catch (err) {
+      console.warn(`[GatePost Auth Storage] Preferred path "${preferred}" unavailable (${err.message}). Falling back to: ${fallback}`);
+    }
+  }
+  if (!fs.existsSync(fallback)) {
+    fs.mkdirSync(fallback, { recursive: true });
+  }
+  return fallback;
 }
+const DATA_DIR = getSafeStorageDir();
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
 console.log(`[GatePost Auth] Local user storage active at: ${DATA_DIR}`);
 
 // Helper: Load persistent local user credentials

@@ -42,7 +42,10 @@ import {
   Strikethrough,
   ExternalLink,
   BookOpen,
-  Edit2
+  Edit2,
+  HardDrive,
+  FolderPlus,
+  FolderCheck
 } from 'lucide-react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -55,9 +58,15 @@ import InsightsCard from './components/cards/InsightsCard';
 import AboutFooterSection from './components/sections/AboutFooterSection';
 import AuthModal from './components/AuthModal';
 import CloudVaultModal from './components/CloudVaultModal';
+import LocalDiskModal from './components/LocalDiskModal';
 import AboutModal from './components/AboutModal';
 import ModelSelectorModal from './components/ModelSelectorModal';
 import BrandLogo from './components/BrandLogo';
+import {
+  getStoredDirectoryHandle,
+  saveChatToDisk,
+  selectLocalFolder
+} from './services/localDiskService';
 
 export default function App() {
   // Current view: 'network' (First Screen) | 'chat' (macOS Luxury AI Workspace)
@@ -139,6 +148,15 @@ export default function App() {
   const [copiedToast, setCopiedToast] = useState('');
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingTitleText, setEditingTitleText] = useState('');
+
+  // Client-Side On-Disk Storage State
+  const [isDiskModalOpen, setIsDiskModalOpen] = useState(false);
+  const [dirHandle, setDirHandle] = useState(null);
+  const [diskAutoSave, setDiskAutoSave] = useState(() => localStorage.getItem('gatepost_disk_autosave') !== 'false');
+  const [lastDiskSaveInfo, setLastDiskSaveInfo] = useState(null);
+  const [showDiskPromptBanner, setShowDiskPromptBanner] = useState(() => {
+    return localStorage.getItem('gatepost_dismiss_disk_banner') !== 'true';
+  });
 
   // Refs
   const dialogEndRef = useRef(null);
@@ -244,6 +262,30 @@ export default function App() {
       loadChats(token, false);
     }
   }, [currentView, token]);
+
+  // Retrieve saved client-side on-disk directory handle on mount
+  useEffect(() => {
+    getStoredDirectoryHandle().then((handle) => {
+      if (handle) {
+        setDirHandle(handle);
+        setShowDiskPromptBanner(false);
+      }
+    });
+  }, []);
+
+  // Automatic real-time on-disk sync whenever active conversation turns change
+  useEffect(() => {
+    if (dirHandle && diskAutoSave && currentChat && messages.length > 0) {
+      const timer = setTimeout(() => {
+        saveChatToDisk(dirHandle, currentChat, messages).then((res) => {
+          if (res && res.success) {
+            setLastDiskSaveInfo(res);
+          }
+        });
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, currentChat, dirHandle, diskAutoSave]);
 
   // Keyboard shortcuts (⌘K for chat search, ⌘1 Chats, ⌘2 Vault, ⌘3 Hub)
   useEffect(() => {
@@ -1032,6 +1074,18 @@ export default function App() {
                 </div>
                 <span className="nav-shortcut-key">Ctrl 3</span>
               </button>
+
+              <button
+                className="workspace-nav-item"
+                onClick={() => setIsDiskModalOpen(true)}
+                title="On-Disk Local Chat Storage"
+              >
+                <div className="nav-item-left">
+                  <HardDrive size={16} color={dirHandle ? '#10b981' : 'currentColor'} />
+                  <span>Disk Storage</span>
+                </div>
+                {dirHandle && <span className="section-count-badge" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.15)' }}>Active</span>}
+              </button>
             </nav>
 
             {/* CHAT LIST SECTIONS */}
@@ -1384,6 +1438,17 @@ export default function App() {
 
               {/* Right Workspace Action Icons */}
               <div className="header-right-group">
+                {/* On-Disk Local Storage Pill */}
+                <button
+                  className={`workspace-disk-pill ${dirHandle ? 'connected' : ''}`}
+                  onClick={() => setIsDiskModalOpen(true)}
+                  title={dirHandle ? `Local Disk Folder: "${dirHandle.name}" (Auto-saving chats)` : "Select folder to store chats on local disk"}
+                >
+                  <HardDrive size={14} color={dirHandle ? '#10b981' : 'currentColor'} />
+                  <span className="disk-pill-name">{dirHandle ? dirHandle.name : 'Save on Disk'}</span>
+                  {dirHandle && <span className="disk-sync-dot" />}
+                </button>
+
                 {/* + New Chat Pill Button */}
                 <button
                   className="workspace-new-chat-btn"
@@ -1440,6 +1505,49 @@ export default function App() {
                 </button>
               </div>
             </header>
+
+            {/* On-Disk Storage Notification Banner (Prompt for First Use) */}
+            {showDiskPromptBanner && !dirHandle && (
+              <div className="disk-prompt-banner">
+                <div className="disk-prompt-banner-left">
+                  <div className="disk-prompt-icon-badge">
+                    <HardDrive size={15} />
+                  </div>
+                  <span>
+                    <strong>Store Chats on Your Local Disk:</strong> Select a folder on your computer so all your conversations are saved directly to your disk.
+                  </span>
+                </div>
+                <div className="disk-prompt-banner-actions">
+                  <button
+                    className="disk-prompt-select-btn"
+                    onClick={async () => {
+                      try {
+                        const h = await selectLocalFolder();
+                        if (h) {
+                          setDirHandle(h);
+                          setShowDiskPromptBanner(false);
+                        }
+                      } catch (err) {
+                        setIsDiskModalOpen(true);
+                      }
+                    }}
+                  >
+                    <FolderPlus size={13} />
+                    <span>Select Folder</span>
+                  </button>
+                  <button
+                    className="disk-prompt-dismiss-btn"
+                    onClick={() => {
+                      setShowDiskPromptBanner(false);
+                      localStorage.setItem('gatepost_dismiss_disk_banner', 'true');
+                    }}
+                    title="Dismiss"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Conversation Messages Thread */}
             <div className="workspace-messages-stream">
@@ -1811,8 +1919,10 @@ export default function App() {
                   <span className="item-val">{activeProvider === 'ollama' ? '⚡ Ollama (Local)' : '☁️ Cloud'}</span>
                 </div>
                 <div className="telemetry-item">
-                  <span className="item-label">Storage Cache</span>
-                  <span className="item-val">E:\storedchace</span>
+                  <span className="item-label">Client Disk Folder</span>
+                  <span className="item-val" style={{ color: dirHandle ? '#10b981' : 'inherit' }}>
+                    {dirHandle ? dirHandle.name : 'Not selected'}
+                  </span>
                 </div>
                 <div className="telemetry-item">
                   <span className="item-label">Total Chats</span>
@@ -1841,6 +1951,10 @@ export default function App() {
                   <LayoutDashboard size={14} />
                   <span>Network Hub View</span>
                 </button>
+                <button className="quick-action-link" onClick={() => setIsDiskModalOpen(true)}>
+                  <HardDrive size={14} color={dirHandle ? '#10b981' : 'currentColor'} />
+                  <span>On-Disk Storage Settings</span>
+                </button>
                 <button className="quick-action-link" onClick={() => setIsVaultOpen(true)}>
                   <Bookmark size={14} />
                   <span>Cloud Vault Archive</span>
@@ -1868,6 +1982,19 @@ export default function App() {
         isOpen={isVaultOpen}
         onClose={() => setIsVaultOpen(false)}
         token={token}
+      />
+
+      {/* Client On-Disk Storage Modal */}
+      <LocalDiskModal
+        isOpen={isDiskModalOpen}
+        onClose={() => setIsDiskModalOpen(false)}
+        dirHandle={dirHandle}
+        setDirHandle={setDirHandle}
+        currentChat={currentChat}
+        messages={messages}
+        autoSave={diskAutoSave}
+        setAutoSave={setDiskAutoSave}
+        lastSaveInfo={lastDiskSaveInfo}
       />
 
       {/* About Modal (Tharak & Gowtham) */}

@@ -4387,6 +4387,485 @@ body {
   border-color: var(--app-card-border);
 }
 
+/* ==========================================================================
+   Client On-Disk Storage UI & Modal (GatePost File System Access)
+   ========================================================================== */
+.local-disk-modal-card {
+  width: 100%;
+  max-width: 540px;
+  background: var(--app-card-bg, #1a1b1e);
+  border: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 40px rgba(0, 240, 255, 0.08);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: diskModalFadeIn 0.22s ease-out;
+}
+
+@keyframes diskModalFadeIn {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.disk-icon-circle {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(37, 99, 235, 0.18)) !important;
+  border: 1px solid rgba(0, 240, 255, 0.3) !important;
+}
+
+.disk-privacy-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 0.65rem 0.9rem;
+  border-radius: 12px;
+  color: #a7f3d0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.disk-folder-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.disk-folder-card.active-connected {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.04), transparent);
+}
+
+.disk-folder-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.disk-folder-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.disk-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.disk-status-indicator.online {
+  color: #34d399;
+}
+
+.disk-status-indicator.offline {
+  color: #94a3b8;
+}
+
+.disk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #64748b;
+  display: inline-block;
+}
+
+.disk-status-indicator.online .disk-dot {
+  background: #10b981;
+}
+
+.disk-dot.pulse {
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: diskPulse 2s infinite;
+}
+
+@keyframes diskPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.disk-folder-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.disk-folder-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--app-text-primary, #ffffff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-folder-name.unselected {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--app-text-muted, #94a3b8);
+}
+
+.disk-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.disk-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+}
+
+.disk-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.disk-browser-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  color: #fde68a;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.disk-action-feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.disk-action-feedback.success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.disk-action-feedback.error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.disk-action-feedback.info {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+}
+
+.disk-action-feedback.loading {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+}
+
+.disk-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.08));
+}
+
+.disk-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.disk-toggle-label strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--app-text-primary, #ffffff);
+}
+
+.disk-toggle-label p {
+  font-size: 0.78rem;
+  color: var(--app-text-muted, #94a3b8);
+  margin-top: 2px;
+}
+
+.disk-sync-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.disk-action-sub-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.1));
+  color: var(--app-text-primary, #ffffff);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.disk-action-sub-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.4);
+}
+
+.disk-disconnect-btn {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.disk-disconnect-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  text-decoration: underline;
+}
+
+.disk-last-saved-meta {
+  font-size: 0.75rem;
+  color: var(--app-text-muted, #94a3b8);
+}
+
+.disk-last-saved-meta code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #38bdf8;
+}
+
+.disk-fallback-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--app-card-border, rgba(255, 255, 255, 0.08));
+}
+
+.disk-fallback-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--app-text-muted, #94a3b8);
+  font-weight: 600;
+}
+
+.disk-fallback-buttons {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.disk-download-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  color: var(--app-text-secondary, #cbd5e1);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.disk-download-pill:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--app-text-primary, #ffffff);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.disk-download-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Header Workspace Pill for Local Disk Storage
+   ========================================================================== */
+.workspace-disk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--app-card-border, rgba(255, 255, 255, 0.1));
+  color: var(--app-text-secondary, #cbd5e1);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.workspace-disk-pill:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--app-text-primary, #ffffff);
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.workspace-disk-pill.connected {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.workspace-disk-pill.connected:hover {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+.workspace-disk-pill .disk-pill-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-disk-pill .disk-sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+/* ==========================================================================
+   On-Disk Storage Notification Banner (First Use / Prompt)
+   ========================================================================== */
+.disk-prompt-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.12), rgba(37, 99, 235, 0.08));
+  border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+  padding: 0.65rem 1.25rem;
+  animation: bannerSlideDown 0.25s ease-out;
+  flex-shrink: 0;
+}
+
+@keyframes bannerSlideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.disk-prompt-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--app-text-primary, #ffffff);
+}
+
+.disk-prompt-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
+  flex-shrink: 0;
+}
+
+.disk-prompt-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.disk-prompt-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.disk-prompt-select-btn:hover {
+  background: #0369a1;
+}
+
+.disk-prompt-dismiss-btn {
+  background: transparent;
+  border: none;
+  color: var(--app-text-muted, #94a3b8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.disk-prompt-dismiss-btn:hover {
+  color: var(--app-text-primary, #ffffff);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 
 
 

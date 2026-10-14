@@ -20,10 +20,25 @@ const router = express.Router();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = process.env.LOCAL_STORAGE_DIR || path.join(__dirname, '../data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function getSafeStorageDir() {
+  const preferred = process.env.LOCAL_STORAGE_DIR;
+  const fallback = path.join(__dirname, '../data');
+  if (preferred) {
+    try {
+      if (!fs.existsSync(preferred)) {
+        fs.mkdirSync(preferred, { recursive: true });
+      }
+      return preferred;
+    } catch (err) {
+      console.warn(`[GatePost Storage] Preferred path "${preferred}" unavailable (${err.message}). Falling back to: ${fallback}`);
+    }
+  }
+  if (!fs.existsSync(fallback)) {
+    fs.mkdirSync(fallback, { recursive: true });
+  }
+  return fallback;
 }
+const DATA_DIR = getSafeStorageDir();
 const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const FILES_FILE = path.join(DATA_DIR, 'files.json');
